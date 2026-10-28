@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code Guardian</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#667085; --border:#e0e4ea; --accent:#3563e9; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151c; --card:#1b2030; --text:#e8ebf2; --muted:#98a2b3; --border:#2c3347; --accent:#6c8cff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:18px 28px; border-bottom:1px solid var(--border); background:var(--card); }
+  header h1 { margin:0; font-size:20px; } header p { margin:4px 0 0; color:var(--muted); font-size:14px; }
+  main { max-width:1100px; margin:24px auto; padding:0 20px; display:grid; gap:20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px; }
+  textarea { width:100%; height:280px; font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; resize:vertical; }
+  input[type=text] { padding:8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); }
+  .row { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  button { background:var(--accent); color:#fff; border:0; padding:9px 18px; border-radius:6px; font-size:14px; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  button:disabled { opacity:.5; cursor:wait; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:12px; font-weight:600; color:#fff; }
+  .critical{background:#b42318} .high{background:#d9531e} .medium{background:#b88200} .low{background:#2e7d5b} .info{background:#667085}
+  .tag { font-size:12px; color:var(--muted); }
+  pre { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; overflow:auto; font-size:13px; max-height:420px; }
+  .score { font-size:32px; font-weight:700; }
+  .error { color:#b42318; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Code Guardian</h1>
+  <p>AI-assisted code cleanup, vulnerability scan, quality check and secret-leak detection (powered by Gemini)</p>
+</header>
+<main>
+  <section class="card">
+    <textarea id="code" placeholder="Paste your code here, or upload a file..."></textarea>
+    <div class="row">
+      <input type="file" id="file">
+      <input type="text" id="filename" placeholder="filename (e.g. app.py)">
+      <button id="run">Analyze</button>
+      <button class="secondary" id="sample">Load sample</button>
+      <span id="status" class="tag"></span>
+    </div>
+  </section>
+
+  <section id="results" class="hidden">
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <div><div class="tag">Quality score</div><div class="score" id="score">-</div></div>
+        <div style="flex:1;min-width:240px" id="summary"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <h3 style="margin-top:0">Findings (<span id="count">0</span>)</h3>
+      <table><thead><tr><th>Severity</th><th>Type</th><th>Line</th><th>Issue</th><th>Suggestion</th></tr></thead>
+      <tbody id="findings"></tbody></table>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <div class="row" style="margin-top:0;justify-content:space-between">
+        <h3 style="margin:0">Cleaned code</h3><button class="secondary" id="copy">Copy</button>
+      </div>
+      <pre id="cleaned"></pre>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+$("file").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  $("code").value = await f.text(); $("filename").value = f.name;
+};
+
+$("sample").onclick = async () => {
+  const r = await fetch("/static-sample"); $("code").value = await r.text(); $("filename").value = "vulnerable_sample.py";
+};
+
+$("copy").onclick = () => navigator.clipboard.writeText($("cleaned").textContent);
+
+$("run").onclick = async () => {
+  $("run").disabled = true; $("status").textContent = "Scanning and asking Gemini..."; $("status").className = "tag";
+  try {
+    const r = await fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ code:$("code").value, filename:$("filename").value }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Request failed");
+    $("results").classList.remove("hidden");
+    $("score").textContent = d.quality_score ?? "-";
+    $("summary").textContent = d.summary;
+    $("count").textContent = d.findings.length;
+    $("findings").innerHTML = d.findings.map(f => `<tr>
+      <td><span class="badge ${esc(f.severity)}">${esc(f.severity)}</span></td>
+      <td>${esc(f.category)}<div class="tag">${f.source === "static" ? "rule scan" : "Gemini"}</div></td>
+      <td>${esc(f.line ?? "-")}</td>
+      <td><b>${esc(f.title)}</b><div class="tag">${esc(f.detail)}</div></td>
+      <td>${esc(f.suggestion)}</td></tr>`).join("");
+    $("cleaned").textContent = d.cleaned_code;
+    $("status").textContent = "Done.";
+  } catch (e) { $("status").textContent = e.message; $("status").className = "tag error"; }
+  $("run").disabled = false;
+};
+</script>
+</body>
+</html>
