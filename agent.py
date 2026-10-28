@@ -33,7 +33,7 @@ Rules:
 
 def analyze(code: str, filename: str, static_findings: list) -> dict:
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
     hints = "\n".join(f"- line {f['line']}: {f['title']}" for f in static_findings) or "none"
     prompt = (f"File name: {filename or 'unknown'}\n\n"
