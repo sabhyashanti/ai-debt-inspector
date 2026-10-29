@@ -62,8 +62,27 @@ def scan_risky(code):
     return out
 
 
-def scan_python(code):
-    """AST checks: unused imports, uncalled top-level functions, very long functions."""
+def collect_names(code):
+    """All identifiers a Python file references or imports (used for cross-file 'is it used?' checks)."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return set()
+    names = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name):
+            names.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            names.add(n.attr)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            names.update(a.name.split(".")[-1] for a in n.names)
+    return names
+
+
+def scan_python(code, global_used=None):
+    """AST checks: unused imports, uncalled top-level functions, very long functions.
+    global_used: names referenced anywhere in the project (avoids false 'unused function' alarms)."""
+    global_used = global_used or set()
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
@@ -79,7 +98,7 @@ def scan_python(code):
                                        "Imported but never referenced.", "Remove the import."))
     for n in tree.body:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if n.name not in used and n.name != "main" and not n.decorator_list and not n.name.startswith("__"):
+            if n.name not in used and n.name not in global_used and n.name != "main" and not n.decorator_list and not n.name.startswith("__"):
                 out.append(finding("unused_code", "low", n.lineno, f"Function '{n.name}' is never called",
                                    "No references found in this file.", "Remove it if it is truly dead code."))
             length = (n.end_lineno or n.lineno) - n.lineno + 1
@@ -89,8 +108,8 @@ def scan_python(code):
     return out
 
 
-def run_all(code, filename=""):
+def run_all(code, filename="", global_used=None):
     results = scan_secrets(code) + scan_risky(code)
-    if filename.endswith(".py") or not filename:
-        results += scan_python(code)
+    if filename.endswith(".py") or "." not in filename:
+        results += scan_python(code, global_used)
     return results
