@@ -5,31 +5,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Code Guardian</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#667085; --border:#e0e4ea; --accent:#3563e9; }
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2230; --muted:#667085; --border:#e0e4ea; --accent:#3563e9; --sel:#eaf0ff; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#12151c; --card:#1b2030; --text:#e8ebf2; --muted:#98a2b3; --border:#2c3347; --accent:#6c8cff; }
+    :root { --bg:#12151c; --card:#1b2030; --text:#e8ebf2; --muted:#98a2b3; --border:#2c3347; --accent:#6c8cff; --sel:#252d49; }
   }
   * { box-sizing:border-box; }
   body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); }
   header { padding:18px 28px; border-bottom:1px solid var(--border); background:var(--card); }
   header h1 { margin:0; font-size:20px; } header p { margin:4px 0 0; color:var(--muted); font-size:14px; }
-  main { max-width:1100px; margin:24px auto; padding:0 20px; display:grid; gap:20px; }
+  main { max-width:1200px; margin:24px auto; padding:0 20px; display:grid; gap:20px; }
   .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px; }
-  textarea { width:100%; height:280px; font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; resize:vertical; }
+  textarea { width:100%; height:260px; font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:10px; resize:vertical; }
   input[type=text] { padding:8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); }
   .row { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
   button { background:var(--accent); color:#fff; border:0; padding:9px 18px; border-radius:6px; font-size:14px; cursor:pointer; }
   button.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
   button:disabled { opacity:.5; cursor:wait; }
+  .tabs { display:flex; gap:6px; margin-bottom:14px; }
+  .tab { background:transparent; color:var(--muted); border:1px solid var(--border); }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th,td { text-align:left; padding:8px; border-bottom:1px solid var(--border); vertical-align:top; }
   .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:12px; font-weight:600; color:#fff; }
   .critical{background:#b42318} .high{background:#d9531e} .medium{background:#b88200} .low{background:#2e7d5b} .info{background:#667085}
   .tag { font-size:12px; color:var(--muted); }
   pre { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; overflow:auto; font-size:13px; max-height:420px; }
-  .score { font-size:32px; font-weight:700; }
+  .score { font-size:30px; font-weight:700; }
+  .stat { margin-right:22px; }
   .error { color:#b42318; }
   .hidden { display:none; }
+  .split { display:grid; grid-template-columns:300px 1fr; gap:20px; margin-top:20px; align-items:start; }
+  @media (max-width:800px) { .split { grid-template-columns:1fr; } }
+  .fitem { display:block; width:100%; text-align:left; background:transparent; color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:8px; }
+  .fitem.sel { background:var(--sel); border-color:var(--accent); }
+  .fitem .path { font-size:13px; word-break:break-all; }
+  #fileList ul { margin:8px 0 0; padding-left:18px; font-size:13px; max-height:140px; overflow:auto; }
 </style>
 </head>
 <body>
@@ -39,33 +49,45 @@
 </header>
 <main>
   <section class="card">
-    <textarea id="code" placeholder="Paste your code here, or upload a file..."></textarea>
+    <div class="tabs">
+      <button class="tab active" data-mode="paste">Paste code</button>
+      <button class="tab" data-mode="files">Upload files / folder</button>
+      <button class="tab" data-mode="repo">GitHub repository</button>
+    </div>
+
+    <div id="m-paste">
+      <textarea id="code" placeholder="Paste your code here..."></textarea>
+      <div class="row"><input type="text" id="filename" placeholder="filename (e.g. app.py)"></div>
+    </div>
+
+    <div id="m-files" class="hidden">
+      <div class="row" style="margin-top:0">
+        <button class="secondary" onclick="$('fileInput').click()">Choose files</button>
+        <button class="secondary" onclick="$('folderInput').click()">Choose folder</button>
+        <button class="secondary" id="clearFiles">Clear</button>
+        <input type="file" id="fileInput" multiple hidden>
+        <input type="file" id="folderInput" webkitdirectory hidden>
+      </div>
+      <div id="fileList"></div>
+    </div>
+
+    <div id="m-repo" class="hidden">
+      <input type="text" id="repoUrl" style="width:100%" placeholder="https://github.com/owner/repo  (or .../tree/main/src)">
+      <div class="tag" style="margin-top:6px">Public repos work out of the box. Private repos need GITHUB_TOKEN in .env.</div>
+    </div>
+
     <div class="row">
-      <input type="file" id="file">
-      <input type="text" id="filename" placeholder="filename (e.g. app.py)">
       <button id="run">Analyze</button>
-      <button class="secondary" id="sample">Load sample</button>
+      <button class="secondary" id="sample">Load sample project</button>
       <span id="status" class="tag"></span>
     </div>
   </section>
 
   <section id="results" class="hidden">
-    <div class="card">
-      <div class="row" style="margin-top:0">
-        <div><div class="tag">Quality score</div><div class="score" id="score">-</div></div>
-        <div style="flex:1;min-width:240px" id="summary"></div>
-      </div>
-    </div>
-    <div class="card" style="margin-top:20px">
-      <h3 style="margin-top:0">Findings (<span id="count">0</span>)</h3>
-      <table><thead><tr><th>Severity</th><th>Type</th><th>Line</th><th>Issue</th><th>Suggestion</th></tr></thead>
-      <tbody id="findings"></tbody></table>
-    </div>
-    <div class="card" style="margin-top:20px">
-      <div class="row" style="margin-top:0;justify-content:space-between">
-        <h3 style="margin:0">Cleaned code</h3><button class="secondary" id="copy">Copy</button>
-      </div>
-      <pre id="cleaned"></pre>
+    <div class="card" id="overview"></div>
+    <div class="split">
+      <div id="fileItems"></div>
+      <div id="detail"></div>
     </div>
   </section>
 </main>
@@ -73,37 +95,105 @@
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const SKIP = new Set(["node_modules",".git",".venv","venv","__pycache__","dist","build","vendor","target",".next"]);
+const OK = /(\.(py|js|jsx|ts|tsx|java|go|rb|php|cs|c|cpp|h|rs|sh|sql|ya?ml|json|html|css|env)|(^|\/)(\.env.*|Dockerfile))$/i;
+const SEVS = ["critical","high","medium","low","info"];
+let mode = "paste", files = [], report = null;
 
-$("file").onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  $("code").value = await f.text(); $("filename").value = f.name;
-};
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.mode === m));
+  ["paste","files","repo"].forEach(x => $("m-" + x).classList.toggle("hidden", x !== m));
+}
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => setMode(b.dataset.mode));
+
+async function addFiles(list) {
+  for (const f of list) {
+    const path = f.webkitRelativePath || f.name;
+    if (path.split("/").slice(0, -1).some(p => SKIP.has(p))) continue;
+    if (!OK.test(path) || f.size > 100 * 1024) continue;
+    files = files.filter(x => x.path !== path);
+    files.push({ path, content: await f.text() });
+  }
+  renderFiles();
+}
+function renderFiles() {
+  $("fileList").innerHTML = files.length
+    ? `<div class="tag" style="margin-top:10px">${files.length} file(s) selected (unsupported, large or ignored files are skipped)</div><ul>${files.map(f => `<li>${esc(f.path)}</li>`).join("")}</ul>`
+    : "";
+}
+$("fileInput").onchange = e => addFiles(e.target.files);
+$("folderInput").onchange = e => addFiles(e.target.files);
+$("clearFiles").onclick = () => { files = []; renderFiles(); };
 
 $("sample").onclick = async () => {
-  const r = await fetch("/static-sample"); $("code").value = await r.text(); $("filename").value = "vulnerable_sample.py";
+  const d = await (await fetch("/api/sample")).json();
+  files = d.files; renderFiles(); setMode("files");
 };
 
-$("copy").onclick = () => navigator.clipboard.writeText($("cleaned").textContent);
+function chips(counts) {
+  return SEVS.filter(s => counts[s]).map(s => `<span class="badge ${s}" style="margin-right:6px">${counts[s]} ${s}</span>`).join("") || '<span class="tag">No findings</span>';
+}
+
+function renderReport() {
+  const r = report;
+  $("results").classList.remove("hidden");
+  $("overview").innerHTML = `<div class="row" style="margin-top:0">
+      <div class="stat"><div class="tag">Source</div><div><b>${esc(r.source)}</b></div></div>
+      <div class="stat"><div class="tag">Files analyzed</div><div class="score">${r.analyzed}</div></div>
+      <div class="stat"><div class="tag">Avg quality score</div><div class="score">${r.avg_score ?? "-"}</div></div>
+      <div>${chips(r.severity_counts)}</div></div>
+      ${r.skipped > 0 ? `<div class="tag" style="margin-top:10px">${r.skipped} file(s) not analyzed (unsupported type, too large, ignored folder, or over the file limit).</div>` : ""}`;
+  $("fileItems").innerHTML = r.files.map((f, i) => {
+    const worst = f.findings[0]?.severity;
+    return `<button class="fitem" data-i="${i}"><div class="path">${esc(f.path)}</div>
+      <div class="tag">${f.findings.length} finding(s) · score ${f.quality_score ?? "-"} ${worst ? `<span class="badge ${worst}">${worst}</span>` : ""}</div></button>`;
+  }).join("");
+  document.querySelectorAll(".fitem").forEach(b => b.onclick = () => show(+b.dataset.i));
+  show(0);
+}
+
+function show(i) {
+  document.querySelectorAll(".fitem").forEach(b => b.classList.toggle("sel", +b.dataset.i === i));
+  const f = report.files[i];
+  $("detail").innerHTML = `
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <div><div class="tag">Quality score</div><div class="score">${f.quality_score ?? "-"}</div></div>
+        <div style="flex:1;min-width:240px"><b>${esc(f.path)}</b> <span class="tag">(${f.lines} lines)</span><div>${esc(f.summary)}</div>
+        ${f.error ? `<div class="error">${esc(f.error)}</div>` : ""}</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <h3 style="margin-top:0">Findings (${f.findings.length})</h3>
+      <table><thead><tr><th>Severity</th><th>Type</th><th>Line</th><th>Issue</th><th>Suggestion</th></tr></thead><tbody>
+      ${f.findings.map(x => `<tr>
+        <td><span class="badge ${esc(x.severity)}">${esc(x.severity)}</span></td>
+        <td>${esc(x.category)}<div class="tag">${x.source === "static" ? "rule scan" : "Gemini"}</div></td>
+        <td>${esc(x.line ?? "-")}</td>
+        <td><b>${esc(x.title)}</b><div class="tag">${esc(x.detail)}</div></td>
+        <td>${esc(x.suggestion)}</td></tr>`).join("")}
+      </tbody></table>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <div class="row" style="margin-top:0;justify-content:space-between">
+        <h3 style="margin:0">Cleaned code</h3><button class="secondary" id="copy">Copy</button>
+      </div>
+      <pre id="cleaned"></pre>
+    </div>`;
+  $("cleaned").textContent = f.cleaned_code || "(no cleaned code returned)";
+  $("copy").onclick = () => navigator.clipboard.writeText(f.cleaned_code || "");
+}
 
 $("run").onclick = async () => {
-  $("run").disabled = true; $("status").textContent = "Scanning and asking Gemini..."; $("status").className = "tag";
+  const payload = mode === "paste" ? { code: $("code").value, filename: $("filename").value }
+                : mode === "files" ? { files } : { repo_url: $("repoUrl").value };
+  $("run").disabled = true; $("status").textContent = "Scanning and asking Gemini (multiple files can take a minute)..."; $("status").className = "tag";
   try {
-    const r = await fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ code:$("code").value, filename:$("filename").value }) });
+    const r = await fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Request failed");
-    $("results").classList.remove("hidden");
-    $("score").textContent = d.quality_score ?? "-";
-    $("summary").textContent = d.summary;
-    $("count").textContent = d.findings.length;
-    $("findings").innerHTML = d.findings.map(f => `<tr>
-      <td><span class="badge ${esc(f.severity)}">${esc(f.severity)}</span></td>
-      <td>${esc(f.category)}<div class="tag">${f.source === "static" ? "rule scan" : "Gemini"}</div></td>
-      <td>${esc(f.line ?? "-")}</td>
-      <td><b>${esc(f.title)}</b><div class="tag">${esc(f.detail)}</div></td>
-      <td>${esc(f.suggestion)}</td></tr>`).join("");
-    $("cleaned").textContent = d.cleaned_code;
-    $("status").textContent = "Done.";
+    report = d; renderReport(); $("status").textContent = "Done.";
   } catch (e) { $("status").textContent = e.message; $("status").className = "tag error"; }
   $("run").disabled = false;
 };
